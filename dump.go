@@ -56,6 +56,7 @@ func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error
 	if err != nil {
 		return nil, err
 	}
+	cmd.Stderr = io.Discard // Discard stderr to avoid printing errors to the console
 
 	if err := cmd.Start(); err != nil {
 		return nil, err

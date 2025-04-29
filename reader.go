@@ -1,6 +1,7 @@
 package pgdump
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -21,7 +22,7 @@ func (r *dumpReader) Read(p []byte) (int, error) {
 
 func (r *dumpReader) Close() error {
 	if r == nil {
-		return nil
+		return errors.New("dumpReader is nil")
 	}
 	var pipeErr, waitErr error
 	if r.pipe != nil {
