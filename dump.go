@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 )
 
@@ -50,7 +51,7 @@ func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error
 	cmd := exec.CommandContext(ctx, pgDumpPath, args...)
 
 	// Set password safely via environment
-	cmd.Env = []string{"PGPASSWORD=" + opts.Password}
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+opts.Password)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -80,7 +81,7 @@ func DumpAll(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, erro
 	cmd := exec.CommandContext(ctx, pgDumpAllPath, args...)
 
 	// Set password safely via environment
-	cmd.Env = []string{"PGPASSWORD=" + opts.Password}
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+opts.Password)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
