@@ -1,6 +1,7 @@
 package pgdump
 
 import (
+	"fmt"
 	"io"
 	"os/exec"
 )
@@ -12,10 +13,28 @@ type dumpReader struct {
 }
 
 func (r *dumpReader) Read(p []byte) (int, error) {
+	if r.pipe == nil {
+		return 0, io.EOF
+	}
 	return r.pipe.Read(p)
 }
 
 func (r *dumpReader) Close() error {
-	defer r.cmd.Wait()
-	return r.pipe.Close()
+	if r == nil {
+		return nil
+	}
+	var pipeErr, waitErr error
+	if r.pipe != nil {
+		pipeErr = r.pipe.Close()
+	}
+	if r.cmd != nil {
+		waitErr = r.cmd.Wait()
+	}
+	if pipeErr != nil && waitErr != nil {
+		return fmt.Errorf("pipe close error: %v; wait error: %v", pipeErr, waitErr)
+	}
+	if pipeErr != nil {
+		return pipeErr
+	}
+	return waitErr
 }
