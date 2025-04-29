@@ -57,7 +57,7 @@ func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = io.Discard
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func DumpAll(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, erro
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = io.Discard
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
