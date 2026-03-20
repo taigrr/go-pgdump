@@ -1,5 +1,7 @@
 # go-pgdump
 
+[![Tests](https://github.com/taigrr/go-pgdump/actions/workflows/test.yml/badge.svg)](https://github.com/taigrr/go-pgdump/actions/workflows/test.yml)
+
 A Go package shim for running PostgreSQL database dumps using `pg_dump` and `pg_dumpall`.
 
 ## Features
@@ -45,7 +47,7 @@ if err != nil {
 ### Full Cluster Dump
 
 ```go
-reader, err := pgdump.DumpAll(ctx, "", opts)
+reader, err := pgdump.DumpAll(ctx, opts)
 if err != nil {
     log.Fatal(err)
 }
@@ -56,7 +58,7 @@ defer reader.Close()
 
 ### Prerequisites
 
-- Go 1.24.2+
+- Go 1.26+
 - Docker (for running tests)
 - PostgreSQL client tools (`pg_dump`, `pg_dumpall`)
 

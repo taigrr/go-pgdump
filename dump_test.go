@@ -130,7 +130,7 @@ func TestDumpAll(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	reader, err := DumpAll(ctx, "", opts)
+	reader, err := DumpAll(ctx, opts)
 	if err != nil {
 		t.Fatalf("DumpAll failed: %v", err)
 	}
