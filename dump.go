@@ -8,10 +8,15 @@ import (
 	"os/exec"
 )
 
+// Opts configures the connection parameters for pg_dump and pg_dumpall.
 type Opts struct {
-	Host     string
-	Port     string
-	User     string
+	// Host is the database server hostname or IP address.
+	Host string
+	// Port is the database server port.
+	Port string
+	// User is the database user to connect as.
+	User string
+	// Password is the database user's password, passed via PGPASSWORD env var.
 	Password string
 }
 
@@ -68,8 +73,8 @@ func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error
 
 // DumpAll starts a pg_dumpall process and returns an io.ReadCloser for the dump output.
 // Caller MUST call Close() to avoid leaking processes.
-func DumpAll(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error) {
-	if pgDumpPath == "" {
+func DumpAll(ctx context.Context, opts Opts) (io.ReadCloser, error) {
+	if pgDumpAllPath == "" {
 		return nil, ErrNotInstalled
 	}
 	args := []string{
