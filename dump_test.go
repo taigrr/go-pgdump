@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 func setupPostgres(t *testing.T) (string, func()) {
+	t.Helper()
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
 		Image:        "postgres:15",
@@ -22,7 +24,9 @@ func setupPostgres(t *testing.T) (string, func()) {
 			"POSTGRES_PASSWORD": "test",
 			"POSTGRES_DB":       "testdb1",
 		},
-		WaitingFor: wait.ForLog("database system is ready to accept connections"),
+		WaitingFor: wait.ForLog("database system is ready to accept connections").
+			WithOccurrence(2).
+			WithStartupTimeout(60 * time.Second),
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -40,9 +44,9 @@ func setupPostgres(t *testing.T) (string, func()) {
 
 	connStr := "postgres://test:test@localhost:" + port.Port() + "/testdb1?sslmode=disable"
 
-	// Create second database with retry
+	// Create second database with retry.
 	var db *sql.DB
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		db, err = sql.Open("postgres", connStr)
 		if err != nil {
 			time.Sleep(time.Second)
@@ -59,8 +63,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	}
 	defer db.Close()
 
-	// Add test data to both databases
-	time.Sleep(time.Second) // Give the second database time to be ready
+	// Add test data to both databases.
 	connStr2 := "postgres://test:test@localhost:" + port.Port() + "/testdb2?sslmode=disable"
 	db2, err := sql.Open("postgres", connStr2)
 	if err != nil {
@@ -68,9 +71,8 @@ func setupPostgres(t *testing.T) (string, func()) {
 	}
 	defer db2.Close()
 
-	// Create and populate tables in both databases
-	for _, db := range []*sql.DB{db, db2} {
-		_, err = db.Exec(`
+	for _, conn := range []*sql.DB{db, db2} {
+		_, err = conn.Exec(`
 			CREATE TABLE users (
 				id SERIAL PRIMARY KEY,
 				name TEXT NOT NULL,
@@ -114,7 +116,48 @@ func TestDumpDB(t *testing.T) {
 	}
 
 	if len(dump) == 0 {
-		t.Error("Dump is empty")
+		t.Fatal("Dump is empty")
+	}
+
+	content := string(dump)
+	if !strings.Contains(content, "CREATE TABLE") {
+		t.Error("Dump missing CREATE TABLE statement")
+	}
+	if !strings.Contains(content, "alice@example.com") {
+		t.Error("Dump missing inserted test data")
+	}
+}
+
+func TestDumpDBWithExtraArgs(t *testing.T) {
+	port, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	opts := Opts{
+		Host:      "localhost",
+		Port:      port,
+		User:      "test",
+		Password:  "test",
+		ExtraArgs: []string{"--schema-only"},
+	}
+
+	ctx := context.Background()
+	reader, err := DumpDB(ctx, "testdb1", opts)
+	if err != nil {
+		t.Fatalf("DumpDB failed: %v", err)
+	}
+	defer reader.Close()
+
+	dump, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("Failed to read dump: %v", err)
+	}
+
+	content := string(dump)
+	if !strings.Contains(content, "CREATE TABLE") {
+		t.Error("Schema-only dump missing CREATE TABLE statement")
+	}
+	if strings.Contains(content, "alice@example.com") {
+		t.Error("Schema-only dump should not contain row data")
 	}
 }
 
@@ -142,6 +185,49 @@ func TestDumpAll(t *testing.T) {
 	}
 
 	if len(dump) == 0 {
-		t.Error("Dump is empty")
+		t.Fatal("Dump is empty")
+	}
+
+	content := string(dump)
+	if !strings.Contains(content, "CREATE ROLE") && !strings.Contains(content, "CREATE DATABASE") {
+		t.Error("DumpAll output missing expected cluster-level statements")
+	}
+}
+
+func TestDumpDBNotInstalled(t *testing.T) {
+	orig := pgDumpPath
+	pgDumpPath = ""
+	defer func() { pgDumpPath = orig }()
+
+	_, err := DumpDB(context.Background(), "test", Opts{})
+	if err != ErrPGDumpNotInstalled {
+		t.Errorf("Expected ErrPGDumpNotInstalled, got: %v", err)
+	}
+}
+
+func TestDumpAllNotInstalled(t *testing.T) {
+	orig := pgDumpAllPath
+	pgDumpAllPath = ""
+	defer func() { pgDumpAllPath = orig }()
+
+	_, err := DumpAll(context.Background(), Opts{})
+	if err != ErrPGDumpAllNotInstalled {
+		t.Errorf("Expected ErrPGDumpAllNotInstalled, got: %v", err)
+	}
+}
+
+func TestErrNotInstalledBackwardCompat(t *testing.T) {
+	// ErrNotInstalled should still match ErrPGDumpNotInstalled for
+	// callers that used errors.Is with the old sentinel.
+	if ErrNotInstalled != ErrPGDumpNotInstalled {
+		t.Error("ErrNotInstalled should equal ErrPGDumpNotInstalled")
+	}
+}
+
+func TestDumpReaderNilClose(t *testing.T) {
+	var reader *dumpReader
+	err := reader.Close()
+	if err == nil {
+		t.Error("Expected error when closing nil dumpReader")
 	}
 }

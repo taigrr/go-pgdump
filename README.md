@@ -9,6 +9,8 @@ A Go package shim for running PostgreSQL database dumps using `pg_dump` and `pg_
 - Run `pg_dump` for single database dumps
 - Run `pg_dumpall` for full cluster dumps
 - Stream dump output directly to your application
+- Pass extra flags (`--schema-only`, `--format=custom`, etc.)
+- Captured stderr on failure for clear diagnostics
 - Automatic process cleanup
 
 ## Installation
@@ -37,11 +39,24 @@ if err != nil {
 }
 defer reader.Close()
 
-// Read the dump output
 dump, err := io.ReadAll(reader)
 if err != nil {
     log.Fatal(err)
 }
+```
+
+### Schema-Only Dump
+
+```go
+opts := pgdump.Opts{
+    Host:      "localhost",
+    Port:      "5432",
+    User:      "postgres",
+    Password:  "secret",
+    ExtraArgs: []string{"--schema-only"},
+}
+
+reader, err := pgdump.DumpDB(ctx, "mydb", opts)
 ```
 
 ### Full Cluster Dump
@@ -52,6 +67,28 @@ if err != nil {
     log.Fatal(err)
 }
 defer reader.Close()
+```
+
+## Error Handling
+
+When `pg_dump` exits with an error, the stderr output is included in the
+error returned by `Close()`:
+
+```go
+reader, err := pgdump.DumpDB(ctx, "nonexistent", opts)
+// ...
+_, _ = io.ReadAll(reader)
+if err := reader.Close(); err != nil {
+    // err contains the pg_dump stderr output
+    log.Fatal(err)
+}
+```
+
+Sentinel errors for missing binaries:
+
+```go
+if errors.Is(err, pgdump.ErrPGDumpNotInstalled) { ... }
+if errors.Is(err, pgdump.ErrPGDumpAllNotInstalled) { ... }
 ```
 
 ## Development
@@ -65,10 +102,11 @@ defer reader.Close()
 ### Running Tests
 
 ```bash
-go test -v
+go test -v -race ./...
 ```
 
-Tests use testcontainers to spin up a PostgreSQL instance and execute both single database and full cluster dumps.
+Tests use testcontainers to spin up a PostgreSQL instance and run both
+single-database and full-cluster dumps.
 
 ## License
 
