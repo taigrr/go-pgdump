@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -92,7 +93,16 @@ func setupPostgres(t *testing.T) (string, func()) {
 	}
 }
 
+func requireBinary(t *testing.T, name string) {
+	t.Helper()
+	if _, err := exec.LookPath(name); err != nil {
+		t.Skipf("%s not installed", name)
+	}
+}
+
 func TestDumpDB(t *testing.T) {
+	requireBinary(t, "pg_dump")
+
 	port, cleanup := setupPostgres(t)
 	defer cleanup()
 
@@ -129,6 +139,8 @@ func TestDumpDB(t *testing.T) {
 }
 
 func TestDumpDBWithExtraArgs(t *testing.T) {
+	requireBinary(t, "pg_dump")
+
 	port, cleanup := setupPostgres(t)
 	defer cleanup()
 
@@ -162,6 +174,8 @@ func TestDumpDBWithExtraArgs(t *testing.T) {
 }
 
 func TestDumpAll(t *testing.T) {
+	requireBinary(t, "pg_dumpall")
+
 	port, cleanup := setupPostgres(t)
 	defer cleanup()
 
