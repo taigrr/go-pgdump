@@ -14,6 +14,20 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+func mustClose[T interface{ Close() error }](t *testing.T, label string, closer T) {
+	t.Helper()
+	if err := closer.Close(); err != nil {
+		t.Errorf("close %s: %v", label, err)
+	}
+}
+
+func mustTerminateContainer(t *testing.T, ctx context.Context, container testcontainers.Container) {
+	t.Helper()
+	if err := container.Terminate(ctx); err != nil {
+		t.Errorf("terminate container: %v", err)
+	}
+}
+
 func setupPostgres(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := context.Background()
@@ -62,7 +76,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create second database after retries: %v", err)
 	}
-	defer db.Close()
+	defer mustClose(t, "primary db", db)
 
 	// Add test data to both databases.
 	connStr2 := "postgres://test:test@localhost:" + port.Port() + "/testdb2?sslmode=disable"
@@ -70,7 +84,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	if err != nil {
 		t.Fatalf("Failed to connect to second db: %v", err)
 	}
-	defer db2.Close()
+	defer mustClose(t, "secondary db", db2)
 
 	for _, conn := range []*sql.DB{db, db2} {
 		_, err = conn.Exec(`
@@ -89,7 +103,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	}
 
 	return port.Port(), func() {
-		container.Terminate(ctx)
+		mustTerminateContainer(t, ctx, container)
 	}
 }
 
@@ -118,7 +132,7 @@ func TestDumpDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DumpDB failed: %v", err)
 	}
-	defer reader.Close()
+	defer mustClose(t, "DumpDB reader", reader)
 
 	dump, err := io.ReadAll(reader)
 	if err != nil {
@@ -157,7 +171,7 @@ func TestDumpDBWithExtraArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DumpDB failed: %v", err)
 	}
-	defer reader.Close()
+	defer mustClose(t, "schema-only DumpDB reader", reader)
 
 	dump, err := io.ReadAll(reader)
 	if err != nil {
@@ -191,7 +205,7 @@ func TestDumpAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DumpAll failed: %v", err)
 	}
-	defer reader.Close()
+	defer mustClose(t, "DumpAll reader", reader)
 
 	dump, err := io.ReadAll(reader)
 	if err != nil {
