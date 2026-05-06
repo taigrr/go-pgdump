@@ -1,8 +1,10 @@
 package pgdump
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -257,5 +259,87 @@ func TestDumpReaderNilClose(t *testing.T) {
 	err := reader.Close()
 	if err == nil {
 		t.Error("Expected error when closing nil dumpReader")
+	}
+}
+
+type stubReadCloser struct {
+	closeErr error
+}
+
+func (stubReadCloser) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (s stubReadCloser) Close() error {
+	return s.closeErr
+}
+
+func TestDumpReaderCloseIncludesStderr(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "printf 'permission denied' >&2; exit 7")
+
+	reader, err := startDump(cmd)
+	if err != nil {
+		t.Fatalf("startDump failed: %v", err)
+	}
+
+	_, _ = io.ReadAll(reader)
+
+	err = reader.Close()
+	if err == nil {
+		t.Fatal("expected Close to return error")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected stderr in error, got: %v", err)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected wrapped exec.ExitError, got %T", err)
+	}
+}
+
+func TestDumpReaderCloseReturnsPipeAndWaitErrors(t *testing.T) {
+	pipeErr := errors.New("pipe close failed")
+	cmd := exec.Command("sh", "-c", "printf 'bad dump' >&2; exit 3")
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe failed: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer stdout.Close()
+
+	err = (&dumpReader{
+		cmd:    cmd,
+		pipe:   stubReadCloser{closeErr: pipeErr},
+		stderr: stderr,
+	}).Close()
+	if err == nil {
+		t.Fatal("expected combined error")
+	}
+	if !strings.Contains(err.Error(), pipeErr.Error()) {
+		t.Fatalf("expected pipe close error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "bad dump") {
+		t.Fatalf("expected stderr in combined error, got: %v", err)
+	}
+}
+
+func TestAppendPasswordAppendsToEnvironment(t *testing.T) {
+	origEnviron := environ
+	t.Cleanup(func() { environ = origEnviron })
+
+	environ = func() []string {
+		return []string{"PGPASSWORD=old", "PATH=/tmp/bin"}
+	}
+
+	env := appendPassword("secret")
+	if got, want := env[len(env)-1], "PGPASSWORD=secret"; got != want {
+		t.Fatalf("appendPassword last entry = %q, want %q", got, want)
+	}
+	if got, want := env[0], "PGPASSWORD=old"; got != want {
+		t.Fatalf("appendPassword should preserve existing env order, got first %q want %q", got, want)
 	}
 }
