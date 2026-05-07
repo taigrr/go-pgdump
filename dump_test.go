@@ -236,9 +236,14 @@ func TestDumpDBNotInstalled(t *testing.T) {
 }
 
 func TestDumpAllNotInstalled(t *testing.T) {
-	orig := pgDumpAllPath
+	origDump := pgDumpPath
+	origDumpAll := pgDumpAllPath
+	pgDumpPath = "/usr/bin/pg_dump"
 	pgDumpAllPath = ""
-	defer func() { pgDumpAllPath = orig }()
+	defer func() {
+		pgDumpPath = origDump
+		pgDumpAllPath = origDumpAll
+	}()
 
 	_, err := DumpAll(context.Background(), Opts{})
 	if err != ErrPGDumpAllNotInstalled {
