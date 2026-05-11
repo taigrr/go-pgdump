@@ -10,6 +10,7 @@ A Go package shim for running PostgreSQL database dumps using `pg_dump` and `pg_
 - Run `pg_dumpall` for full cluster dumps
 - Stream dump output directly to your application
 - Pass extra flags (`--schema-only`, `--format=custom`, etc.)
+- Omit empty connection flags so libpq defaults and environment variables still work
 - Captured stderr on failure for clear diagnostics
 - Automatic process cleanup
 

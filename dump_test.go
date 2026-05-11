@@ -1,9 +1,12 @@
 package pgdump
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,20 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+func mustClose[T interface{ Close() error }](t *testing.T, label string, closer T) {
+	t.Helper()
+	if err := closer.Close(); err != nil {
+		t.Errorf("close %s: %v", label, err)
+	}
+}
+
+func mustTerminateContainer(t *testing.T, ctx context.Context, container testcontainers.Container) {
+	t.Helper()
+	if err := container.Terminate(ctx); err != nil {
+		t.Errorf("terminate container: %v", err)
+	}
+}
 
 func setupPostgres(t *testing.T) (string, func()) {
 	t.Helper()
@@ -61,7 +78,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	if err != nil {
 		t.Fatalf("Failed to create second database after retries: %v", err)
 	}
-	defer db.Close()
+	defer mustClose(t, "primary db", db)
 
 	// Add test data to both databases.
 	connStr2 := "postgres://test:test@localhost:" + port.Port() + "/testdb2?sslmode=disable"
@@ -69,7 +86,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	if err != nil {
 		t.Fatalf("Failed to connect to second db: %v", err)
 	}
-	defer db2.Close()
+	defer mustClose(t, "secondary db", db2)
 
 	for _, conn := range []*sql.DB{db, db2} {
 		_, err = conn.Exec(`
@@ -88,11 +105,20 @@ func setupPostgres(t *testing.T) (string, func()) {
 	}
 
 	return port.Port(), func() {
-		container.Terminate(ctx)
+		mustTerminateContainer(t, ctx, container)
+	}
+}
+
+func requireBinary(t *testing.T, name string) {
+	t.Helper()
+	if _, err := exec.LookPath(name); err != nil {
+		t.Skipf("%s not installed", name)
 	}
 }
 
 func TestDumpDB(t *testing.T) {
+	requireBinary(t, "pg_dump")
+
 	port, cleanup := setupPostgres(t)
 	defer cleanup()
 
@@ -108,7 +134,7 @@ func TestDumpDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DumpDB failed: %v", err)
 	}
-	defer reader.Close()
+	defer mustClose(t, "DumpDB reader", reader)
 
 	dump, err := io.ReadAll(reader)
 	if err != nil {
@@ -129,6 +155,8 @@ func TestDumpDB(t *testing.T) {
 }
 
 func TestDumpDBWithExtraArgs(t *testing.T) {
+	requireBinary(t, "pg_dump")
+
 	port, cleanup := setupPostgres(t)
 	defer cleanup()
 
@@ -145,7 +173,7 @@ func TestDumpDBWithExtraArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DumpDB failed: %v", err)
 	}
-	defer reader.Close()
+	defer mustClose(t, "schema-only DumpDB reader", reader)
 
 	dump, err := io.ReadAll(reader)
 	if err != nil {
@@ -162,6 +190,8 @@ func TestDumpDBWithExtraArgs(t *testing.T) {
 }
 
 func TestDumpAll(t *testing.T) {
+	requireBinary(t, "pg_dumpall")
+
 	port, cleanup := setupPostgres(t)
 	defer cleanup()
 
@@ -177,7 +207,7 @@ func TestDumpAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DumpAll failed: %v", err)
 	}
-	defer reader.Close()
+	defer mustClose(t, "DumpAll reader", reader)
 
 	dump, err := io.ReadAll(reader)
 	if err != nil {
@@ -206,9 +236,14 @@ func TestDumpDBNotInstalled(t *testing.T) {
 }
 
 func TestDumpAllNotInstalled(t *testing.T) {
-	orig := pgDumpAllPath
+	origDump := pgDumpPath
+	origDumpAll := pgDumpAllPath
+	pgDumpPath = "/usr/bin/pg_dump"
 	pgDumpAllPath = ""
-	defer func() { pgDumpAllPath = orig }()
+	defer func() {
+		pgDumpPath = origDump
+		pgDumpAllPath = origDumpAll
+	}()
 
 	_, err := DumpAll(context.Background(), Opts{})
 	if err != ErrPGDumpAllNotInstalled {
@@ -230,4 +265,119 @@ func TestDumpReaderNilClose(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when closing nil dumpReader")
 	}
+}
+
+type stubReadCloser struct {
+	closeErr error
+}
+
+func (stubReadCloser) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (s stubReadCloser) Close() error {
+	return s.closeErr
+}
+
+func TestDumpReaderCloseIncludesStderr(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "printf 'permission denied' >&2; exit 7")
+
+	reader, err := startDump(cmd)
+	if err != nil {
+		t.Fatalf("startDump failed: %v", err)
+	}
+
+	_, _ = io.ReadAll(reader)
+
+	err = reader.Close()
+	if err == nil {
+		t.Fatal("expected Close to return error")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected stderr in error, got: %v", err)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected wrapped exec.ExitError, got %T", err)
+	}
+}
+
+func TestDumpReaderCloseReturnsPipeAndWaitErrors(t *testing.T) {
+	pipeErr := errors.New("pipe close failed")
+	cmd := exec.Command("sh", "-c", "printf 'bad dump' >&2; exit 3")
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe failed: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer stdout.Close()
+
+	err = (&dumpReader{
+		cmd:    cmd,
+		pipe:   stubReadCloser{closeErr: pipeErr},
+		stderr: stderr,
+	}).Close()
+	if err == nil {
+		t.Fatal("expected combined error")
+	}
+	if !strings.Contains(err.Error(), pipeErr.Error()) {
+		t.Fatalf("expected pipe close error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "bad dump") {
+		t.Fatalf("expected stderr in combined error, got: %v", err)
+	}
+}
+
+func TestBuildDumpDBArgsOmitsEmptyConnectionFlags(t *testing.T) {
+	args := buildDumpDBArgs("appdb", Opts{})
+	want := []string{"-d", "appdb"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpDBArgs() = %v, want %v", args, want)
+	}
+}
+
+func TestBuildDumpDBArgsIncludesConnectionFlagsAndExtraArgs(t *testing.T) {
+	args := buildDumpDBArgs("appdb", Opts{
+		Host:      "db.internal",
+		Port:      "5433",
+		User:      "postgres",
+		ExtraArgs: []string{"--schema-only", "--no-owner"},
+	})
+	want := []string{"-h", "db.internal", "-p", "5433", "-U", "postgres", "-d", "appdb", "--schema-only", "--no-owner"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpDBArgs() = %v, want %v", args, want)
+	}
+}
+
+func TestBuildDumpAllArgsOmitsEmptyConnectionFlags(t *testing.T) {
+	args := buildDumpAllArgs(Opts{ExtraArgs: []string{"--globals-only"}})
+	want := []string{"--globals-only"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpAllArgs() = %v, want %v", args, want)
+	}
+}
+
+func TestAppendPasswordAppendsToEnvironment(t *testing.T) {
+	origEnviron := environ
+	t.Cleanup(func() { environ = origEnviron })
+
+	environ = func() []string {
+		return []string{"PGPASSWORD=old", "PATH=/tmp/bin"}
+	}
+
+	env := appendPassword("secret")
+	if got, want := env[len(env)-1], "PGPASSWORD=secret"; got != want {
+		t.Fatalf("appendPassword last entry = %q, want %q", got, want)
+	}
+	if got, want := env[0], "PGPASSWORD=old"; got != want {
+		t.Fatalf("appendPassword should preserve existing env order, got first %q want %q", got, want)
+	}
+}
+
+func equalStrings(got []string, want []string) bool {
+	return len(got) == len(want) && strings.Join(got, "\x00") == strings.Join(want, "\x00")
 }
