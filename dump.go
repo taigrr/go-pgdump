@@ -61,14 +61,8 @@ func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error
 	if pgDumpPath == "" {
 		return nil, ErrPGDumpNotInstalled
 	}
-	args := []string{
-		"-h", opts.Host,
-		"-p", opts.Port,
-		"-U", opts.User,
-		"-d", dbName,
-	}
-	args = append(args, opts.ExtraArgs...)
 
+	args := buildDumpDBArgs(dbName, opts)
 	cmd := exec.CommandContext(ctx, pgDumpPath, args...)
 	cmd.Env = appendPassword(opts.Password)
 
@@ -82,17 +76,39 @@ func DumpAll(ctx context.Context, opts Opts) (io.ReadCloser, error) {
 	if pgDumpAllPath == "" {
 		return nil, ErrPGDumpAllNotInstalled
 	}
-	args := []string{
-		"-h", opts.Host,
-		"-p", opts.Port,
-		"-U", opts.User,
-	}
-	args = append(args, opts.ExtraArgs...)
 
+	args := buildDumpAllArgs(opts)
 	cmd := exec.CommandContext(ctx, pgDumpAllPath, args...)
 	cmd.Env = appendPassword(opts.Password)
 
 	return startDump(cmd)
+}
+
+func buildDumpDBArgs(dbName string, opts Opts) []string {
+	args := buildConnectionArgs(opts)
+	args = append(args, "-d", dbName)
+	args = append(args, opts.ExtraArgs...)
+	return args
+}
+
+func buildDumpAllArgs(opts Opts) []string {
+	args := buildConnectionArgs(opts)
+	args = append(args, opts.ExtraArgs...)
+	return args
+}
+
+func buildConnectionArgs(opts Opts) []string {
+	args := make([]string, 0, 6)
+	if opts.Host != "" {
+		args = append(args, "-h", opts.Host)
+	}
+	if opts.Port != "" {
+		args = append(args, "-p", opts.Port)
+	}
+	if opts.User != "" {
+		args = append(args, "-U", opts.User)
+	}
+	return args
 }
 
 // startDump wires up stdout/stderr pipes and starts the command.

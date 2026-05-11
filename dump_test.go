@@ -332,6 +332,35 @@ func TestDumpReaderCloseReturnsPipeAndWaitErrors(t *testing.T) {
 	}
 }
 
+func TestBuildDumpDBArgsOmitsEmptyConnectionFlags(t *testing.T) {
+	args := buildDumpDBArgs("appdb", Opts{})
+	want := []string{"-d", "appdb"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpDBArgs() = %v, want %v", args, want)
+	}
+}
+
+func TestBuildDumpDBArgsIncludesConnectionFlagsAndExtraArgs(t *testing.T) {
+	args := buildDumpDBArgs("appdb", Opts{
+		Host:      "db.internal",
+		Port:      "5433",
+		User:      "postgres",
+		ExtraArgs: []string{"--schema-only", "--no-owner"},
+	})
+	want := []string{"-h", "db.internal", "-p", "5433", "-U", "postgres", "-d", "appdb", "--schema-only", "--no-owner"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpDBArgs() = %v, want %v", args, want)
+	}
+}
+
+func TestBuildDumpAllArgsOmitsEmptyConnectionFlags(t *testing.T) {
+	args := buildDumpAllArgs(Opts{ExtraArgs: []string{"--globals-only"}})
+	want := []string{"--globals-only"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpAllArgs() = %v, want %v", args, want)
+	}
+}
+
 func TestAppendPasswordAppendsToEnvironment(t *testing.T) {
 	origEnviron := environ
 	t.Cleanup(func() { environ = origEnviron })
@@ -347,4 +376,8 @@ func TestAppendPasswordAppendsToEnvironment(t *testing.T) {
 	if got, want := env[0], "PGPASSWORD=old"; got != want {
 		t.Fatalf("appendPassword should preserve existing env order, got first %q want %q", got, want)
 	}
+}
+
+func equalStrings(got []string, want []string) bool {
+	return len(got) == len(want) && strings.Join(got, "\x00") == strings.Join(want, "\x00")
 }
