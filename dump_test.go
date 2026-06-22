@@ -13,7 +13,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 func mustClose[T interface{ Close() error }](t *testing.T, label string, closer T) {
@@ -33,23 +33,14 @@ func mustTerminateContainer(t *testing.T, ctx context.Context, container testcon
 func setupPostgres(t *testing.T) (string, func()) {
 	t.Helper()
 	ctx := context.Background()
-	req := testcontainers.ContainerRequest{
-		Image:        "postgres:15",
-		ExposedPorts: []string{"5432/tcp"},
-		Env: map[string]string{
-			"POSTGRES_USER":     "test",
-			"POSTGRES_PASSWORD": "test",
-			"POSTGRES_DB":       "testdb1",
-		},
-		WaitingFor: wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).
-			WithStartupTimeout(60 * time.Second),
-	}
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	container, err := postgres.Run(ctx,
+		"postgres:15",
+		postgres.WithDatabase("testdb1"),
+		postgres.WithUsername("test"),
+		postgres.WithPassword("test"),
+		postgres.BasicWaitStrategies(),
+	)
 	if err != nil {
 		t.Fatalf("Failed to start container: %v", err)
 	}
