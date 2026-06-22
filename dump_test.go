@@ -378,6 +378,21 @@ func TestAppendPasswordAppendsToEnvironment(t *testing.T) {
 	}
 }
 
+func TestAppendPasswordLeavesEnvironmentUnchangedWithoutPassword(t *testing.T) {
+	origEnviron := environ
+	t.Cleanup(func() { environ = origEnviron })
+
+	environ = func() []string {
+		return []string{"PGPASSWORD=old", "PATH=/tmp/bin"}
+	}
+
+	env := appendPassword("")
+	want := []string{"PGPASSWORD=old", "PATH=/tmp/bin"}
+	if !equalStrings(env, want) {
+		t.Fatalf("appendPassword(\"\") = %v, want %v", env, want)
+	}
+}
+
 func equalStrings(got []string, want []string) bool {
 	return len(got) == len(want) && strings.Join(got, "\x00") == strings.Join(want, "\x00")
 }
