@@ -1,6 +1,6 @@
 module github.com/taigrr/go-pgdump
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/lib/pq v1.12.3
