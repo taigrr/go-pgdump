@@ -129,8 +129,11 @@ func startDump(cmd *exec.Cmd) (io.ReadCloser, error) {
 }
 
 // appendPassword returns a copy of the current environment with the
-// PGPASSWORD variable set.
+// PGPASSWORD variable set when a password is provided.
 func appendPassword(password string) []string {
+	if password == "" {
+		return environ()
+	}
 	return append(environ(), "PGPASSWORD="+password)
 }
 
