@@ -86,7 +86,9 @@ func DumpAll(ctx context.Context, opts Opts) (io.ReadCloser, error) {
 
 func buildDumpDBArgs(dbName string, opts Opts) []string {
 	args := buildConnectionArgs(opts)
-	args = append(args, "-d", dbName)
+	if dbName != "" {
+		args = append(args, "-d", dbName)
+	}
 	args = append(args, opts.ExtraArgs...)
 	return args
 }
