@@ -258,6 +258,17 @@ func TestDumpReaderNilClose(t *testing.T) {
 	}
 }
 
+func TestDumpReaderNilRead(t *testing.T) {
+	var reader *dumpReader
+	bytesRead, err := reader.Read(make([]byte, 1))
+	if bytesRead != 0 {
+		t.Fatalf("Read bytes = %d, want 0", bytesRead)
+	}
+	if err != io.EOF {
+		t.Fatalf("Read error = %v, want %v", err, io.EOF)
+	}
+}
+
 type stubReadCloser struct {
 	closeErr error
 }
