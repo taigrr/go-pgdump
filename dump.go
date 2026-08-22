@@ -57,6 +57,11 @@ func init() {
 // processes. If the underlying pg_dump process writes to stderr and then exits
 // with a non-zero status, Close returns an error that includes the captured
 // stderr output.
+//
+// If dbName is the empty string, the -d flag is omitted entirely and pg_dump
+// falls back to libpq/environment defaults (e.g. PGDATABASE) to determine the
+// database to dump. Callers that require an explicit database name should
+// validate dbName themselves before calling DumpDB.
 func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error) {
 	if pgDumpPath == "" {
 		return nil, ErrPGDumpNotInstalled
@@ -86,7 +91,9 @@ func DumpAll(ctx context.Context, opts Opts) (io.ReadCloser, error) {
 
 func buildDumpDBArgs(dbName string, opts Opts) []string {
 	args := buildConnectionArgs(opts)
-	args = append(args, "-d", dbName)
+	if dbName != "" {
+		args = append(args, "-d", dbName)
+	}
 	args = append(args, opts.ExtraArgs...)
 	return args
 }

@@ -342,6 +342,14 @@ func TestBuildDumpDBArgsOmitsEmptyConnectionFlags(t *testing.T) {
 	}
 }
 
+func TestBuildDumpDBArgsOmitsEmptyDBName(t *testing.T) {
+	args := buildDumpDBArgs("", Opts{ExtraArgs: []string{"--schema-only"}})
+	want := []string{"--schema-only"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpDBArgs() = %v, want %v", args, want)
+	}
+}
+
 func TestBuildDumpDBArgsIncludesConnectionFlagsAndExtraArgs(t *testing.T) {
 	args := buildDumpDBArgs("appdb", Opts{
 		Host:      "db.internal",
