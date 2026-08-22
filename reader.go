@@ -17,7 +17,7 @@ type dumpReader struct {
 }
 
 func (r *dumpReader) Read(p []byte) (int, error) {
-	if r.pipe == nil {
+	if r == nil || r.pipe == nil {
 		return 0, io.EOF
 	}
 	return r.pipe.Read(p)
