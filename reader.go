@@ -43,7 +43,10 @@ func (r *dumpReader) Close() error {
 		}
 	}
 	if pipeErr != nil && waitErr != nil {
-		return fmt.Errorf("pipe close error: %v; wait error: %v", pipeErr, waitErr)
+		return errors.Join(
+			fmt.Errorf("pipe close error: %w", pipeErr),
+			fmt.Errorf("wait error: %w", waitErr),
+		)
 	}
 	if pipeErr != nil {
 		return pipeErr
