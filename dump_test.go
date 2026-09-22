@@ -371,6 +371,19 @@ func TestBuildDumpAllArgsOmitsEmptyConnectionFlags(t *testing.T) {
 	}
 }
 
+func TestBuildDumpAllArgsIncludesConnectionFlagsAndExtraArgs(t *testing.T) {
+	args := buildDumpAllArgs(Opts{
+		Host:      "db.internal",
+		Port:      "5433",
+		User:      "postgres",
+		ExtraArgs: []string{"--globals-only", "--no-role-passwords"},
+	})
+	want := []string{"-h", "db.internal", "-p", "5433", "-U", "postgres", "--globals-only", "--no-role-passwords"}
+	if !equalStrings(args, want) {
+		t.Fatalf("buildDumpAllArgs() = %v, want %v", args, want)
+	}
+}
+
 func TestAppendPasswordAppendsToEnvironment(t *testing.T) {
 	origEnviron := environ
 	t.Cleanup(func() { environ = origEnviron })
