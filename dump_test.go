@@ -332,6 +332,13 @@ func TestDumpReaderCloseReturnsPipeAndWaitErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "bad dump") {
 		t.Fatalf("expected stderr in combined error, got: %v", err)
 	}
+	if !errors.Is(err, pipeErr) {
+		t.Fatalf("expected combined error to wrap pipe error, got: %v", err)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected combined error to wrap exec.ExitError, got %T", err)
+	}
 }
 
 func TestBuildDumpDBArgsOmitsEmptyConnectionFlags(t *testing.T) {
