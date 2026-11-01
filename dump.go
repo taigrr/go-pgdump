@@ -56,7 +56,7 @@ func init() {
 // output. The caller MUST call Close on the returned reader to avoid leaking
 // processes. If the underlying pg_dump process writes to stderr and then exits
 // with a non-zero status, Close returns an error that includes the captured
-// stderr output.
+// stderr output. Repeated or concurrent Close calls return the same result.
 //
 // If dbName is the empty string, the -d flag is omitted entirely and pg_dump
 // falls back to libpq/environment defaults (e.g. PGDATABASE) to determine the
@@ -76,7 +76,7 @@ func DumpDB(ctx context.Context, dbName string, opts Opts) (io.ReadCloser, error
 
 // DumpAll starts a pg_dumpall process and returns an io.ReadCloser for the
 // dump output. The caller MUST call Close on the returned reader to avoid
-// leaking processes.
+// leaking processes. Repeated or concurrent Close calls return the same result.
 func DumpAll(ctx context.Context, opts Opts) (io.ReadCloser, error) {
 	if pgDumpAllPath == "" {
 		return nil, ErrPGDumpAllNotInstalled
