@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -425,4 +426,48 @@ func TestAppendPasswordLeavesEnvironmentUnchangedWithoutPassword(t *testing.T) {
 
 func equalStrings(got []string, want []string) bool {
 	return len(got) == len(want) && strings.Join(got, "\x00") == strings.Join(want, "\x00")
+}
+
+func TestDumpReaderCloseRepeated(t *testing.T) {
+	for _, script := range []string{"printf dump", "printf failure >&2; exit 7"} {
+		t.Run(script, func(t *testing.T) {
+			reader, err := startDump(exec.Command("sh", "-c", script))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.ReadAll(reader); err != nil {
+				t.Fatal(err)
+			}
+			firstErr := reader.Close()
+			if secondErr := reader.Close(); secondErr != firstErr {
+				t.Fatalf("second Close = %v, want original result %v", secondErr, firstErr)
+			}
+		})
+	}
+}
+
+func TestDumpReaderCloseConcurrent(t *testing.T) {
+	reader, err := startDump(exec.Command("sh", "-c", "printf failure >&2; exit 7"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(reader); err != nil {
+		t.Fatal(err)
+	}
+	const callers = 8
+	results := make([]error, callers)
+	var group sync.WaitGroup
+	for index := range results {
+		group.Add(1)
+		go func() { defer group.Done(); results[index] = reader.Close() }()
+	}
+	group.Wait()
+	if results[0] == nil || !strings.Contains(results[0].Error(), "failure") {
+		t.Fatalf("missing process failure: %v", results[0])
+	}
+	for _, result := range results {
+		if result != results[0] {
+			t.Fatalf("Close result = %v, want %v", result, results[0])
+		}
+	}
 }
