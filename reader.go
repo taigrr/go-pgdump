@@ -7,13 +7,16 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // dumpReader wraps pg_dump's stdout and waits for the process on Close.
 type dumpReader struct {
-	cmd    *exec.Cmd
-	pipe   io.ReadCloser
-	stderr *bytes.Buffer
+	cmd       *exec.Cmd
+	pipe      io.ReadCloser
+	stderr    *bytes.Buffer
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func (r *dumpReader) Read(p []byte) (int, error) {
@@ -26,10 +29,16 @@ func (r *dumpReader) Read(p []byte) (int, error) {
 // Close releases the stdout pipe and waits for the underlying process to
 // exit. If the process exits with a non-zero status and produced stderr
 // output, the error message includes that output for diagnostics.
+// Repeated or concurrent calls return the result of the first Close.
 func (r *dumpReader) Close() error {
 	if r == nil {
 		return errors.New("dumpReader is nil")
 	}
+	r.closeOnce.Do(func() { r.closeErr = r.close() })
+	return r.closeErr
+}
+
+func (r *dumpReader) close() error {
 	var pipeErr, waitErr error
 	if r.pipe != nil {
 		pipeErr = r.pipe.Close()
