@@ -471,3 +471,62 @@ func TestDumpReaderCloseConcurrent(t *testing.T) {
 		}
 	}
 }
+
+func TestStartDumpCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reader, err := startDump(exec.CommandContext(ctx, "sh", "-c", "printf unexpected"))
+	if reader != nil {
+		defer reader.Close()
+		t.Fatal("canceled context returned a reader")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("startDump error = %v, want context.Canceled", err)
+	}
+}
+
+func TestStartDumpMissingExecutable(t *testing.T) {
+	reader, err := startDump(exec.Command(t.TempDir() + "/missing-pg-dump"))
+	if reader != nil {
+		defer reader.Close()
+		t.Fatal("missing executable returned a reader")
+	}
+	if err == nil || !strings.Contains(err.Error(), "starting dump process") {
+		t.Fatalf("startDump error = %v, want startup error", err)
+	}
+}
+
+func TestDumpReaderCancellationReapsProcess(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// Use shell builtins only so cancellation cannot leave a child process
+	// holding stdout open. The marker proves cancellation occurs after startup.
+	cmd := exec.CommandContext(ctx, "sh", "-c", "printf ready; while :; do :; done")
+	reader, err := startDump(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cancel(); _ = reader.Close() })
+	marker := make([]byte, len("ready"))
+	if _, err := io.ReadFull(reader, marker); err != nil {
+		t.Fatal(err)
+	}
+	if string(marker) != "ready" {
+		t.Fatalf("startup marker = %q", marker)
+	}
+	cancel()
+	if _, err := io.ReadAll(reader); err != nil {
+		t.Fatalf("reading canceled process output: %v", err)
+	}
+	closeErr := reader.Close()
+	var exitErr *exec.ExitError
+	if !errors.As(closeErr, &exitErr) {
+		t.Fatalf("Close error = %v, want exec.ExitError", closeErr)
+	}
+	if cmd.ProcessState == nil || cmd.ProcessState.Success() {
+		t.Fatalf("process not reaped with failure: %v", cmd.ProcessState)
+	}
+	if repeatedErr := reader.Close(); repeatedErr != closeErr {
+		t.Fatalf("repeated Close = %v, want original %v", repeatedErr, closeErr)
+	}
+}
